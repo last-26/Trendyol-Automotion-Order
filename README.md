@@ -11,12 +11,22 @@ Bu proje Trendyol Yemek platformunda otomatik yemek siparişi verebilmenizi sağ
 - 📊 Fiyat karşılaştırma
 - 🛒 Otomatik sepete ekleme
 - 📝 CSV sonuçları
+- 🧪 Playwright testleri
+
+## 🛠️ Kullanılan Teknolojiler
+
+- **Node.js** - Runtime environment
+- **Playwright** - Browser automation
+- **dotenv** - Environment variables
+- **csv-writer** - CSV export
+- **fs-extra** - File operations
 
 ## 📋 Gereksinimler
 
 - Node.js (v16+)
 - npm veya yarn
 - Trendyol Yemek hesabı
+- Playwright (otomatik yüklenir)
 
 ## ⚡ Hızlı Kurulum
 
@@ -31,7 +41,12 @@ cd trendyol-yemek-scraper
 npm install
 ```
 
-3. **Environment değişkenlerini ayarlayın:**
+3. **Playwright browser'ları yükleyin:**
+```bash
+npx playwright install
+```
+
+4. **Environment değişkenlerini ayarlayın:**
 `.env` dosyasını oluşturun:
 ```bash
 TRENDYOL_EMAIL=sizin_email@example.com
@@ -40,9 +55,24 @@ TRENDYOL_FOOD_SEARCH=margarita pizza
 TRENDYOL_PRICE_CATEGORY=ucuz
 ```
 
-4. **Programı çalıştırın:**
+5. **Programı çalıştırın:**
 ```bash
 node main.js
+```
+
+## 🧪 Testler (Opsiyonel)
+
+Projede Playwright testleri mevcuttur. Testleri çalıştırmak için:
+
+```bash
+# Tüm testleri çalıştır
+npx playwright test
+
+# Testleri UI modunda çalıştır
+npx playwright test --ui
+
+# Test sonuçlarını gör
+npx playwright show-report
 ```
 
 ## 🔧 Yapılandırma
@@ -86,6 +116,23 @@ const PRICE_CATEGORY = 'orta'; // 'ucuz', 'orta', 'pahalı'
 ```javascript
 // config.js'te
 HEADLESS: true // Tarayıcıyı gizle
+```
+
+### Playwright Yapılandırması
+
+`playwright.config.js` dosyasında test ayarları bulunur:
+
+```javascript
+module.exports = defineConfig({
+  testDir: './tests',              // Test klasörü
+  timeout: 60000,                  // Test timeout'u
+  retries: 2,                      // Başarısız test retry sayısı
+  use: {
+    headless: false,               // Test sırasında tarayıcı görünür
+    screenshot: 'only-on-failure', // Sadece başarısız testlerde screenshot
+    video: 'retain-on-failure'     // Başarısız testlerde video kaydet
+  }
+});
 ```
 
 ## 🔐 Güvenlik

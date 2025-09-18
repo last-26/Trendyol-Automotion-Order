@@ -1,12 +1,23 @@
 {
   "name": "trendyol-yemek-scraper",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Trendyol Yemek otomatik sipariş ve fiyat analiz sistemi",
+  "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node main.js",
+    "test": "node test-scraper.js",
+    "dev": "node --trace-warnings main.js",
+    "clean": "rm -rf node_modules package-lock.json && npm install",
+    "setup": "npm install && cp .env.example .env && echo 'Lütfen .env dosyasını düzenleyin!'",
+    "debug": "DEBUG=* node main.js"
   },
-  "keywords": [],
+  "keywords": [
+    "trendyol",
+    "yemek",
+    "scraper",
+    "playwright",
+    "automation"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -18,5 +29,9 @@
   "devDependencies": {
     "@types/node": "^24.5.2",
     "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
   }
 }
