@@ -96,7 +96,7 @@ async function runFoodScraper() {
     logInfo('='.repeat(60));
     logInfo(`🔍 Aranan Yemek: ${FOOD_NAME}`);
     logInfo(`🏪 Kontrol Edilen Restoran Sayısı: ${Math.max(...allProducts.map(p => p.restaurantIndex || 1))}`);
-    logInfo(`📦 Toplam Ürün Sayısı: ${allProducts.length}`);
+    logInfo(`📦 Toplam Eşleşen Ürün Sayısı: ${allProducts.length}`);
     
     if (allProducts.length > 0) {
       const prices = allProducts.map(p => p.price).sort((a, b) => a - b);
@@ -109,7 +109,7 @@ async function runFoodScraper() {
       logInfo(`  Medyan: ${prices[Math.floor(prices.length / 2)]} ₺`);
       
       // En ucuz 5 ürün
-      logInfo('\n🏆 EN UCUZ 5 ÜRÜN:');
+      logInfo('\n🏆 EN UCUZ 5 MARGARITA PIZZA:');
       const cheapest5 = [...allProducts].sort((a, b) => a.price - b.price).slice(0, 5);
       cheapest5.forEach((product, index) => {
         logInfo(`  ${index + 1}. ${product.price} ₺ - ${product.name}`);
@@ -124,7 +124,8 @@ async function runFoodScraper() {
           restaurantSummary[product.restaurantName] = {
             products: [],
             minPrice: Infinity,
-            maxPrice: 0
+            maxPrice: 0,
+            avgPrice: 0
           };
         }
         restaurantSummary[product.restaurantName].products.push(product);
@@ -134,11 +135,22 @@ async function runFoodScraper() {
           Math.max(restaurantSummary[product.restaurantName].maxPrice, product.price);
       });
       
-      Object.keys(restaurantSummary).slice(0, 5).forEach(restaurantName => {
+      // Ortalama fiyatları hesapla ve sırala
+      Object.keys(restaurantSummary).forEach(restaurantName => {
         const summary = restaurantSummary[restaurantName];
+        summary.avgPrice = summary.products.reduce((sum, p) => sum + p.price, 0) / summary.products.length;
+      });
+      
+      // En ucuz ortalamaya sahip 5 restoran
+      const sortedRestaurants = Object.entries(restaurantSummary)
+        .sort((a, b) => a[1].avgPrice - b[1].avgPrice)
+        .slice(0, 5);
+      
+      sortedRestaurants.forEach(([restaurantName, summary]) => {
         logInfo(`  ${restaurantName}:`);
         logInfo(`    Ürün Sayısı: ${summary.products.length}`);
         logInfo(`    Fiyat Aralığı: ${summary.minPrice} - ${summary.maxPrice} ₺`);
+        logInfo(`    Ortalama: ${summary.avgPrice.toFixed(2)} ₺`);
       });
       
       if (selectedProduct) {
@@ -182,4 +194,4 @@ async function runFoodScraper() {
 runFoodScraper().catch(error => {
   logError('❌ Program çalıştırma hatası:', error);
   process.exit(1);
-}); 
+});

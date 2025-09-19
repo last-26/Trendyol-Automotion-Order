@@ -50,9 +50,9 @@ class TrendyolYemekScraper {
         locale: 'tr-TR'
       });
 
-      // Console mesajlarını dinle
+      // Console mesajlarını dinle (sadece önemli olanlar)
       this.page.on('console', msg => {
-        if (this.debugMode && !msg.text().includes('Failed')) {
+        if (this.debugMode && !msg.text().includes('Failed') && !msg.text().includes('DOM')) {
           console.log('PAGE LOG:', msg.text());
         }
       });
@@ -204,17 +204,62 @@ class TrendyolYemekScraper {
 
       // Sonuçların yüklenmesini bekle
       logInfo('⏳ Arama sonuçları yükleniyor...');
-      await delay(3000); // API yanıtı için bekle
+      await delay(3000);
 
       // URL kontrolü
       const currentUrl = this.page.url();
       logInfo(`📍 Mevcut URL: ${currentUrl}`);
+
+      // AÇIK RESTORANLARI FİLTRELE
+      await this.filterOpenRestaurants();
 
       return true;
 
     } catch (error) {
       logError(`Arama hatası:`, error);
       return false;
+    }
+  }
+
+  async filterOpenRestaurants() {
+    try {
+      logInfo('🔍 Açık restoranlar filtresi uygulanıyor...');
+
+      // Popüler Filtreler altındaki "Açık Restoranlar" butonunu bul
+      const filterSelectors = [
+        'button:has-text("Açık Restoranlar")',
+        'span:has-text("Açık Restoranlar")',
+        'label:has-text("Açık Restoranlar")',
+        'input[type="checkbox"] + label:has-text("Açık Restoranlar")',
+        '[class*="filter"]:has-text("Açık Restoranlar")',
+        'div:has-text("Açık Restoranlar")'
+      ];
+
+      let filterApplied = false;
+      for (const selector of filterSelectors) {
+        try {
+          const filterButton = this.page.locator(selector).first();
+          if (await filterButton.isVisible({ timeout: 3000 })) {
+            await filterButton.click();
+            logInfo('✅ "Açık Restoranlar" filtresi uygulandı');
+            filterApplied = true;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!filterApplied) {
+        logInfo('⚠️ "Açık Restoranlar" filtresi bulunamadı, tüm restoranlar kontrol edilecek');
+      } else {
+        // Filtreleme işleminin tamamlanması için bekle
+        await delay(5000);
+        logInfo('✅ Filtreleme tamamlandı, sadece açık restoranlar listeleniyor');
+      }
+
+    } catch (error) {
+      logError('Filtreleme hatası:', error);
     }
   }
 
@@ -239,7 +284,7 @@ class TrendyolYemekScraper {
           const elements = await this.page.locator(selector).all();
           if (elements.length > 0) {
             restaurantCards = elements;
-            logInfo(`✅ ${elements.length} restoran kartı bulundu (${selector})`);
+            logInfo(`✅ ${elements.length} restoran kartı bulundu`);
             break;
           }
         } catch (e) {
@@ -262,34 +307,38 @@ class TrendyolYemekScraper {
 
           // Restoran kartına tıkla
           await restaurantCards[i].click();
-          await delay(3000); // Sayfa yüklenmesini bekle
+          await delay(3000);
 
           // Restoran adını al
           const restaurantName = await this.getRestaurantName();
           logInfo(`📍 Restoran: ${restaurantName}`);
 
-          // Bu restorandaki ürünleri çek
+          // Sayfayı tamamen yükle (scroll)
+          await this.scrollPageToBottom();
+
+          // Bu restorandaki SADECE ARAMAYLA İLGİLİ ürünleri çek
           const products = await this.getRestaurantPrices(foodName);
           
           if (products.length > 0) {
-            logInfo(`✅ ${products.length} ürün bulundu`);
+            logInfo(`✅ ${products.length} eşleşen ürün bulundu`);
             
-            // Tüm ürünlere restoran indeksini ekle (sıralama için)
+            // Tüm ürünlere restoran indeksini ekle
             products.forEach(product => {
               product.restaurantIndex = i + 1;
+              product.restaurantUrl = this.page.url();
             });
             
             // Ana listeye ekle
             this.allProducts = [...this.allProducts, ...products];
           } else {
-            logInfo(`⚠️ Bu restoranda uygun ürün bulunamadı`);
+            logInfo(`⚠️ Bu restoranda "${foodName}" ile eşleşen ürün bulunamadı`);
           }
 
           // Arama sonuçlarına geri dön
           await this.page.goBack();
           await delay(2000);
 
-          // Restoran kartlarını yeniden yükle (DOM değişmiş olabilir)
+          // Restoran kartlarını yeniden yükle
           restaurantCards = await this.page.locator(restaurantSelectors[0]).all();
 
         } catch (restaurantError) {
@@ -299,6 +348,10 @@ class TrendyolYemekScraper {
           try {
             await this.page.goto(this.page.url().split('?')[0] + `?searchQuery=${encodeURIComponent(foodName)}`);
             await delay(2000);
+            
+            // Filtreyi tekrar uygula
+            await this.filterOpenRestaurants();
+            
             restaurantCards = await this.page.locator(restaurantSelectors[0]).all();
           } catch (navError) {
             logError('Navigasyon hatası:', navError.message);
@@ -306,7 +359,7 @@ class TrendyolYemekScraper {
         }
       }
 
-      logInfo(`\n📊 TOPLAM: ${this.allProducts.length} ürün ${restaurantsToCheck} restorandan toplandı`);
+      logInfo(`\n📊 TOPLAM: ${this.allProducts.length} eşleşen ürün ${restaurantsToCheck} restorandan toplandı`);
       
       return this.allProducts;
 
@@ -316,9 +369,36 @@ class TrendyolYemekScraper {
     }
   }
 
+  async scrollPageToBottom() {
+    try {
+      logInfo('📜 Sayfa sonuna kadar kaydırılıyor...');
+      
+      // Sayfayı yavaşça aşağı kaydır
+      await this.page.evaluate(async () => {
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const scrollHeight = document.body.scrollHeight;
+        const step = 500; // Her adımda 500px kaydır
+        
+        for (let i = 0; i < scrollHeight; i += step) {
+          window.scrollTo(0, i);
+          await delay(200); // Her kaydırmada 200ms bekle
+        }
+        
+        // En sona git
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      
+      await delay(1000); // Tüm içeriğin yüklenmesi için ekstra bekle
+      logInfo('✅ Sayfa tamamen yüklendi');
+      
+    } catch (error) {
+      logError('Scroll hatası:', error);
+    }
+  }
+
   async getRestaurantPrices(foodName) {
     try {
-      logInfo('📊 Ürün fiyatları çekiliyor...');
+      logInfo(`📊 "${foodName}" ile eşleşen ürünler aranıyor...`);
       
       const products = [];
       const restaurantName = await this.getRestaurantName();
@@ -340,7 +420,7 @@ class TrendyolYemekScraper {
           const elements = await this.page.locator(selector).all();
           if (elements.length > 0) {
             productElements = elements;
-            logInfo(`📦 ${elements.length} ürün kartı bulundu`);
+            logInfo(`📦 ${elements.length} ürün kartı bulundu, filtreleniyor...`);
             break;
           }
         } catch (e) {
@@ -349,12 +429,14 @@ class TrendyolYemekScraper {
       }
 
       // Her ürünü kontrol et
-      for (let i = 0; i < Math.min(productElements.length, 30); i++) {
+      let checkedCount = 0;
+      for (let i = 0; i < productElements.length && i < 100; i++) { // Max 100 ürün kontrol et
         try {
           const product = productElements[i];
+          checkedCount++;
           
           // Ürün adını çek
-          const nameSelectors = ['h3', 'h4', 'h5', '[class*="name"]', '[class*="title"]'];
+          const nameSelectors = ['h3', 'h4', 'h5', '[class*="name"]', '[class*="title"]', 'span[class*="heading"]'];
           let productName = '';
           
           for (const selector of nameSelectors) {
@@ -367,6 +449,11 @@ class TrendyolYemekScraper {
             } catch (e) {
               continue;
             }
+          }
+
+          // SADECE ARAMA TERİMİYLE GERÇEKTEN EŞLEŞEN ÜRÜNLERİ AL
+          if (!productName || !this.isExactMatch(productName, foodName)) {
+            continue; // Eşleşmiyorsa atla
           }
 
           // Fiyatı çek
@@ -386,41 +473,90 @@ class TrendyolYemekScraper {
               if (await priceEl.isVisible({ timeout: 500 })) {
                 const priceText = await priceEl.textContent();
                 price = this.extractPrice(priceText);
-                if (price) break;
+                if (price && price > 0 && price < 2000) break; // Mantıklı fiyat aralığı
               }
             } catch (e) {
               continue;
             }
           }
 
-          // Pizza ile ilgili ürünleri filtrele
-          if (productName && price) {
-            const isPizzaRelated = this.isPizzaProduct(productName, foodName);
+          // Geçerli ürün bulundu
+          if (productName && price && price > 10) { // 10 TL'den düşük fiyatlar genelde hatalı
+            products.push({
+              name: productName.trim(),
+              price: price,
+              restaurantName: restaurantName,
+              foodName: foodName,
+              element: product
+            });
             
-            if (isPizzaRelated) {
-              products.push({
-                name: productName.trim(),
-                price: price,
-                restaurantName: restaurantName,
-                foodName: foodName,
-                element: product
-              });
-              
-              logInfo(`  ✅ ${productName}: ${price} ₺`);
-            }
+            logInfo(`  ✅ ${productName}: ${price} ₺`);
           }
           
         } catch (productError) {
-          // Ürün hatası sessizce geç
+          // Sessizce devam et
         }
       }
 
+      logInfo(`  📊 ${checkedCount} ürün kontrol edildi, ${products.length} eşleşme bulundu`);
+      
       return products;
 
     } catch (error) {
       logError('Fiyat çekme hatası:', error);
       return [];
     }
+  }
+
+  isExactMatch(productName, searchTerm) {
+    const name = productName.toLowerCase().trim();
+    const search = searchTerm.toLowerCase().trim();
+    
+    // Tam eşleşme kontrolü
+    if (name === search) return true;
+    
+    // Arama teriminin tüm kelimeleri ürün adında geçiyor mu?
+    const searchWords = search.split(' ').filter(word => word.length > 2); // 2 harften kısa kelimeleri atla
+    const nameHasAllWords = searchWords.every(word => name.includes(word));
+    
+    if (!nameHasAllWords) return false;
+    
+    // Margarita pizza için özel kontroller
+    if (search.includes('margarita')) {
+      // Margarita varyasyonları
+      const margaritaVariations = ['margarita', 'margherita', 'margerita', 'margareta', 'margaritta'];
+      const hasMargarita = margaritaVariations.some(variation => name.includes(variation));
+      
+      if (!hasMargarita) return false;
+      
+      // Pizza kelimesi de olmalı veya pizza olduğu anlaşılmalı
+      if (!name.includes('pizza') && !name.includes('pızza')) {
+        // Pizza kelimesi yoksa, en azından boy bilgisi olmalı (küçük, orta, büyük)
+        const hasSizeInfo = ['küçük', 'orta', 'büyük', 'small', 'medium', 'large', 'boy'].some(size => 
+          name.includes(size)
+        );
+        if (!hasSizeInfo) return false;
+      }
+      
+      // İSTEMEDİĞİMİZ kelimeler (bunlar varsa eşleşme YAPMA)
+      const excludeWords = [
+        'menü', 'menu', 'kampanya', 'fırsat', 'set', 'paket', 'combo', 
+        'adet', 'dilim', 'pasta', 'makarna', 'burger', 'döner', 'dürüm',
+        'sandviç', 'tost', 'salata', 'çorba', 'tatlı', 'içecek', 'sos'
+      ];
+      
+      const hasExcludedWord = excludeWords.some(word => name.includes(word));
+      if (hasExcludedWord && !name.includes('pizza')) return false;
+      
+      return true;
+    }
+    
+    // Genel pizza kontrolü
+    if (search.includes('pizza')) {
+      return name.includes('pizza') || name.includes('pızza');
+    }
+    
+    return true;
   }
 
   async getRestaurantName() {
@@ -448,31 +584,6 @@ class TrendyolYemekScraper {
     return 'Bilinmeyen Restoran';
   }
 
-  isPizzaProduct(productName, searchTerm) {
-    const name = productName.toLowerCase();
-    const search = searchTerm.toLowerCase();
-    
-    // Arama terimini içeriyor mu?
-    if (name.includes(search)) return true;
-    
-    // Margarita varyasyonları
-    if (search.includes('margarita')) {
-      if (name.includes('margarita') || name.includes('margherita') || 
-          name.includes('margerita') || name.includes('margareta')) {
-        return true;
-      }
-    }
-    
-    // Genel pizza kelimeleri
-    const pizzaKeywords = [
-      'pizza', 'margarita', 'margherita', 'peynirli', 
-      'sucuklu', 'karışık', 'vejetaryen', 'pepperoni',
-      'hawaiian', 'bbq', 'quattro', 'marinara', 'special'
-    ];
-    
-    return pizzaKeywords.some(keyword => name.includes(keyword));
-  }
-
   extractPrice(priceText) {
     if (!priceText) return null;
     
@@ -481,7 +592,13 @@ class TrendyolYemekScraper {
     priceText = priceText.replace(',', '.');
     
     const price = parseFloat(priceText);
-    return isNaN(price) ? null : price;
+    
+    // Mantıklı fiyat kontrolü
+    if (isNaN(price) || price < 10 || price > 2000) {
+      return null;
+    }
+    
+    return price;
   }
 
   async selectAndAddToCart(category) {
@@ -523,43 +640,75 @@ class TrendyolYemekScraper {
       // En ucuz ürünün olduğu restorana git
       logInfo(`\n🔄 En uygun fiyatlı restorana gidiliyor...`);
       
-      // Önce arama sayfasına dön
-      const searchUrl = `https://www.trendyolyemek.com/arama?searchQuery=${encodeURIComponent(targetProduct.foodName)}`;
-      await this.page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
-      await delay(3000);
-
-      // Hedef restoranı bul ve tıkla
-      const restaurantCards = await this.page.locator('[class*="card"]:has(img)').all();
-      
-      if (restaurantCards.length >= targetProduct.restaurantIndex) {
-        await restaurantCards[targetProduct.restaurantIndex - 1].click();
+      if (targetProduct.restaurantUrl) {
+        // Direkt restoran URL'sine git
+        await this.page.goto(targetProduct.restaurantUrl, { waitUntil: 'domcontentloaded' });
         await delay(3000);
-
-        logInfo('✅ Hedef restoran açıldı, ürün aranıyor...');
-
-        // Ürünü bul ve sepete ekle
-        const productCards = await this.page.locator('div[class*="item"]:has(button)').all();
+      } else {
+        // Arama sayfasından git
+        const searchUrl = `https://www.trendyolyemek.com/arama?searchQuery=${encodeURIComponent(targetProduct.foodName)}`;
+        await this.page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
+        await delay(3000);
         
-        for (const card of productCards) {
-          try {
-            const nameEl = await card.locator('h3, h4, h5').first();
-            const name = await nameEl.textContent();
-            
-            if (name && name.trim() === targetProduct.name) {
-              // Sepete ekle butonunu bul
-              const addButton = await card.locator('button').first();
-              await addButton.click();
-              logInfo('✅ Ürün sepete eklendi!');
-              await delay(2000);
-              return targetProduct;
-            }
-          } catch (e) {
-            continue;
-          }
+        // Filtreyi tekrar uygula
+        await this.filterOpenRestaurants();
+        
+        // Hedef restoranı bul ve tıkla
+        const restaurantCards = await this.page.locator('[class*="card"]:has(img)').all();
+        
+        if (restaurantCards.length >= targetProduct.restaurantIndex) {
+          await restaurantCards[targetProduct.restaurantIndex - 1].click();
+          await delay(3000);
         }
       }
 
-      logError('Ürün sepete eklenemedi');
+      logInfo('✅ Hedef restoran açıldı, ürün aranıyor...');
+      
+      // Sayfayı tamamen yükle
+      await this.scrollPageToBottom();
+
+      // Ürünü bul ve sepete ekle
+      const productCards = await this.page.locator('div[class*="item"]:has(button)').all();
+      
+      for (const card of productCards) {
+        try {
+          const nameEl = await card.locator('h3, h4, h5, [class*="name"], [class*="title"]').first();
+          const name = await nameEl.textContent();
+          
+          if (name && name.trim() === targetProduct.name) {
+            // Sepete ekle butonunu bul
+            const addButtonSelectors = [
+              'button[class*="add"]',
+              'button:has-text("Sepete Ekle")',
+              'button:has-text("Ekle")',
+              'button[type="button"]:has(svg)',
+              'button[aria-label*="ekle"]'
+            ];
+            
+            let added = false;
+            for (const selector of addButtonSelectors) {
+              try {
+                const addButton = card.locator(selector).first();
+                if (await addButton.isVisible({ timeout: 1000 })) {
+                  await addButton.click();
+                  logInfo('✅ Ürün sepete eklendi!');
+                  await delay(2000);
+                  added = true;
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            
+            if (added) return targetProduct;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      logError('⚠️ Ürün bulunamadı veya sepete eklenemedi');
       return targetProduct; // Yine de analiz için döndür
 
     } catch (error) {

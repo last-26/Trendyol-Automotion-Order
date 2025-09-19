@@ -16,7 +16,9 @@ module.exports = {
   
   // Scraping ayarları
   MAX_RESTAURANTS: 10, // Analiz edilecek maksimum restoran sayısı (varsayılan)
-  MAX_PRODUCTS_PER_RESTAURANT: 30, // Her restorandan alınacak maksimum ürün
+  MAX_PRODUCTS_PER_RESTAURANT: 100, // Her restorandan kontrol edilecek maksimum ürün
+  MIN_VALID_PRICE: 10, // Minimum geçerli fiyat (TL) - Daha düşük fiyatlar hatalı olabilir
+  MAX_VALID_PRICE: 2000, // Maximum geçerli fiyat (TL) - Daha yüksek fiyatlar hatalı olabilir
   
   // Browser ayarları
   HEADLESS: false, // Geliştirme sırasında false, production'da true yapın
